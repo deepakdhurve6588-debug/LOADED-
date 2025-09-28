@@ -1,10 +1,8 @@
-from selenium import webdriver
+import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 import json
 import time
 import os
@@ -14,70 +12,60 @@ APPSTATE_FILE = "appstate.json"
 USER_FILE = "replied_users.json"
 
 
-class MessengerAppStateBot:
+class MessengerBot:
     def __init__(self, headless=True, message_file="messages.txt", delay_between_messages=2):
-        options = webdriver.ChromeOptions()
+        options = uc.ChromeOptions()
         if headless:
-            options.add_argument("--headless=new")
-        options.add_argument("--disable-notifications")
-        options.add_argument("--disable-infobars")
-        options.add_argument("--disable-extensions")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
+            options.headless = True
 
-        self.driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()),
-            options=options
-        )
+        # Initialize undetected-chromedriver
+        self.driver = uc.Chrome(options=options)
         self.wait = WebDriverWait(self.driver, 15)
         self.message_file = message_file
         self.delay_between_messages = delay_between_messages
         self.replied_users = self.load_replied_users()
         atexit.register(self.close)
 
-    # ------------------ AppState ------------------
+    # ----------- AppState Handling -----------
     def save_appstate(self):
-        try:
-            self.driver.get("https://www.facebook.com")
-            time.sleep(3)
-            data = {
-                "cookies": self.driver.get_cookies(),
-                "localStorage": self.driver.execute_script(
-                    "var items = {}; for(var i=0;i<localStorage.length;i++){ var k = localStorage.key(i); items[k] = localStorage.getItem(k);} return items;"
-                )
-            }
-            with open(APPSTATE_FILE, "w", encoding="utf-8") as f:
-                json.dump(data, f)
-            print("💾 AppState saved")
-        except Exception as e:
-            print(f"❌ Error saving appstate: {e}")
+        self.driver.get("https://www.facebook.com")
+        time.sleep(3)
+        data = {
+            "cookies": self.driver.get_cookies(),
+            "localStorage": self.driver.execute_script(
+                "var items = {}; for(var i=0;i<localStorage.length;i++){ var k = localStorage.key(i); items[k] = localStorage.getItem(k);} return items;"
+            )
+        }
+        with open(APPSTATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        print("💾 AppState saved")
 
     def load_appstate(self):
-        try:
-            if os.path.exists(APPSTATE_FILE):
-                with open(APPSTATE_FILE, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                self.driver.get("https://www.facebook.com")
-                time.sleep(2)
-                for cookie in data.get("cookies", []):
-                    if "sameSite" in cookie and cookie["sameSite"] == "None":
-                        cookie["sameSite"] = "Strict"
-                    try:
-                        self.driver.add_cookie(cookie)
-                    except:
-                        pass
-                for k, v in data.get("localStorage", {}).items():
-                    self.driver.execute_script(f"localStorage.setItem('{k}', '{v}');")
-                self.driver.refresh()
-                time.sleep(5)
-                print("✅ AppState loaded")
-                return True
+        if not os.path.exists(APPSTATE_FILE):
             return False
-        except Exception as e:
-            print(f"❌ Error loading appstate: {e}")
-            return False
+        with open(APPSTATE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
 
-    # ------------------ User Tracking ------------------
+        self.driver.get("https://www.facebook.com")
+        time.sleep(2)
+
+        for cookie in data.get("cookies", []):
+            if "sameSite" in cookie and cookie["sameSite"] == "None":
+                cookie["sameSite"] = "Strict"
+            try:
+                self.driver.add_cookie(cookie)
+            except:
+                pass
+
+        for k, v in data.get("localStorage", {}).items():
+            self.driver.execute_script(f"localStorage.setItem('{k}', '{v}');")
+
+        self.driver.refresh()
+        time.sleep(5)
+        print("✅ AppState loaded")
+        return True
+
+    # ----------- User Tracking -----------
     def load_replied_users(self):
         if os.path.exists(USER_FILE):
             with open(USER_FILE, "r", encoding="utf-8") as f:
@@ -95,7 +83,7 @@ class MessengerAppStateBot:
         self.replied_users.add(user_id)
         self.save_replied_users()
 
-    # ------------------ Messages ------------------
+    # ----------- Messages -----------
     def read_messages_from_file(self):
         if not os.path.exists(self.message_file):
             print(f"❌ Message file '{self.message_file}' not found!")
@@ -104,7 +92,7 @@ class MessengerAppStateBot:
             messages = [line.strip() for line in f if line.strip()]
         return messages
 
-    # ------------------ Auto Reply ------------------
+    # ----------- Auto Reply -----------
     def check_and_reply(self):
         messages = self.read_messages_from_file()
         if not messages:
@@ -124,7 +112,7 @@ class MessengerAppStateBot:
                             chat.click()
                             time.sleep(3)
 
-                            # user_id from URL
+                            # Get user ID from URL
                             current_url = self.driver.current_url
                             if "t/" in current_url:
                                 user_id = current_url.split("t/")[-1].split("?")[0]
@@ -135,7 +123,7 @@ class MessengerAppStateBot:
                                 print(f"⏩ Already replied to {user_id}")
                                 continue
 
-                            # Send messages line by line
+                            # Send messages from file
                             msg_box = self.wait.until(
                                 EC.presence_of_element_located((By.XPATH, "//div[@role='textbox']"))
                             )
@@ -169,7 +157,7 @@ class MessengerAppStateBot:
 if __name__ == "__main__":
     print("⚠️ WARNING: Automating Facebook Messenger may violate Facebook’s Terms of Service.")
 
-    bot = MessengerAppStateBot(headless=True, message_file="messages.txt", delay_between_messages=3)
+    bot = MessengerBot(headless=True, message_file="messages.txt", delay_between_messages=3)
 
     if not bot.load_appstate():
         print("⚠️ No AppState found. Login manually first.")
