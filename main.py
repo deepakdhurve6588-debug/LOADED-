@@ -41,7 +41,7 @@ def read_messages_from_file(file_path):
 if __name__ == "__main__":
     print("⚠️ Reminder: Facebook automation may violate Terms of Service. Use responsibly!")
 
-    UID = "PUT_TARGET_UID_HERE"  # Yahan target user ka Facebook UID daalein
+    UID = "100021841126660"  # Yahan target user ka Facebook UID daalein
 
     messages = read_messages_from_file("messages.txt") or ["नमस्ते!"]
 
