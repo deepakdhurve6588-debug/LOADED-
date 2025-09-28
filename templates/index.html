@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Deepak E2EE Bot</title>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .btn { padding: 10px 20px; background: #007bff; color: white; border: none; cursor: pointer; }
+        .btn:hover { background: #0056b3; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 Deepak E2EE Messenger Bot</h1>
+        <p>End-to-End Encrypted messaging system</p>
+        
+        <button class="btn" onclick="sendTestMessage()">Send Test Message</button>
+        <div id="result"></div>
+    </div>
+
+    <script>
+        async function sendTestMessage() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Sending E2EE message...';
+            
+            try {
+                const response = await fetch('/send/deepak', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        messages: ['Hello Deepak! 🔐', 'E2EE Test Message']
+                    })
+                });
+                
+                const data = await response.json();
+                resultDiv.innerHTML = JSON.stringify(data, null, 2);
+            } catch (error) {
+                resultDiv.innerHTML = 'Error: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>
