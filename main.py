@@ -7,17 +7,20 @@ DELAY_BETWEEN_MESSAGES = 2  # seconds
 
 async def send_message_to_uid(uid, messages):
     if not os.path.exists(APPSTATE_FILE):
-        print("❌ appstate.json missing! Pehle local machine pe login karke bana lo.")
+        print("❌ appstate.json missing! Pehle local machine par login karke bana lo.")
         return
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-setuid-sandbox"]
+        )
         context = await browser.new_context(storage_state=APPSTATE_FILE)
         page = await context.new_page()
 
-        msg_url = f"https://www.messenger.com/t/{uid}"
-        await page.goto(msg_url, timeout=60000)
-        await page.wait_for_timeout(4000)  # Wait for load
+        url = f"https://www.messenger.com/t/{uid}"
+        await page.goto(url, timeout=60000)
+        await page.wait_for_timeout(4000)  # Page load ka wait
 
         for i, message in enumerate(messages, 1):
             try:
@@ -39,9 +42,9 @@ def read_messages_from_file(file_path):
         return [line.strip() for line in f if line.strip()]
 
 if __name__ == "__main__":
-    print("⚠️ Reminder: Facebook automation may violate Terms of Service. Use responsibly!")
+    print("⚠️ Warning: Facebook automation may violate Terms of Service. Use responsibly!")
 
-    UID = "100021841126660"  # Yahan target user ka Facebook UID daalein
+    UID = "PUT_TARGET_UID_HERE"  # Yahan Facebook user ka UID dalein
 
     messages = read_messages_from_file("messages.txt") or ["नमस्ते!"]
 
