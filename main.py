@@ -1,71 +1,20 @@
-import undetected_chromedriver as uc
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.keys import Keys
+import asyncio
 import json
-import time
 import os
-import atexit
+from playwright.async_api import async_playwright
 
 APPSTATE_FILE = "appstate.json"
 USER_FILE = "replied_users.json"
+MESSAGE_FILE = "messages.txt"
 
 
 class MessengerBot:
-    def __init__(self, headless=True, message_file="messages.txt", delay_between_messages=2):
-        options = uc.ChromeOptions()
-        if headless:
-            options.headless = True
-
-        # Initialize undetected-chromedriver
-        self.driver = uc.Chrome(options=options)
-        self.wait = WebDriverWait(self.driver, 15)
+    def __init__(self, message_file=MESSAGE_FILE, delay_between_messages=2):
         self.message_file = message_file
         self.delay_between_messages = delay_between_messages
         self.replied_users = self.load_replied_users()
-        atexit.register(self.close)
 
-    # ----------- AppState Handling -----------
-    def save_appstate(self):
-        self.driver.get("https://www.facebook.com")
-        time.sleep(3)
-        data = {
-            "cookies": self.driver.get_cookies(),
-            "localStorage": self.driver.execute_script(
-                "var items = {}; for(var i=0;i<localStorage.length;i++){ var k = localStorage.key(i); items[k] = localStorage.getItem(k);} return items;"
-            )
-        }
-        with open(APPSTATE_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f)
-        print("💾 AppState saved")
-
-    def load_appstate(self):
-        if not os.path.exists(APPSTATE_FILE):
-            return False
-        with open(APPSTATE_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        self.driver.get("https://www.facebook.com")
-        time.sleep(2)
-
-        for cookie in data.get("cookies", []):
-            if "sameSite" in cookie and cookie["sameSite"] == "None":
-                cookie["sameSite"] = "Strict"
-            try:
-                self.driver.add_cookie(cookie)
-            except:
-                pass
-
-        for k, v in data.get("localStorage", {}).items():
-            self.driver.execute_script(f"localStorage.setItem('{k}', '{v}');")
-
-        self.driver.refresh()
-        time.sleep(5)
-        print("✅ AppState loaded")
-        return True
-
-    # ----------- User Tracking -----------
+    # --------- User Tracking ----------
     def load_replied_users(self):
         if os.path.exists(USER_FILE):
             with open(USER_FILE, "r", encoding="utf-8") as f:
@@ -83,8 +32,8 @@ class MessengerBot:
         self.replied_users.add(user_id)
         self.save_replied_users()
 
-    # ----------- Messages -----------
-    def read_messages_from_file(self):
+    # --------- Messages ----------
+    def read_messages(self):
         if not os.path.exists(self.message_file):
             print(f"❌ Message file '{self.message_file}' not found!")
             return []
@@ -92,28 +41,37 @@ class MessengerBot:
             messages = [line.strip() for line in f if line.strip()]
         return messages
 
-    # ----------- Auto Reply -----------
-    def check_and_reply(self):
-        messages = self.read_messages_from_file()
+    # --------- Main Bot ----------
+    async def run(self):
+        messages = self.read_messages()
         if not messages:
-            print("❌ No messages to send.")
+            print("❌ No messages to send!")
             return
 
-        self.driver.get("https://www.messenger.com")
-        time.sleep(5)
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(storage_state=APPSTATE_FILE if os.path.exists(APPSTATE_FILE) else None)
+            page = await context.new_page()
 
-        while True:
-            try:
-                unread_chats = self.driver.find_elements(By.XPATH, "//li//div[contains(@class,'unread')]")
-                if unread_chats:
-                    print(f"📩 Found {len(unread_chats)} unread messages")
-                    for chat in unread_chats:
-                        try:
-                            chat.click()
-                            time.sleep(3)
+            await page.goto("https://www.messenger.com", timeout=60000)
+            await page.wait_for_timeout(5000)
 
-                            # Get user ID from URL
-                            current_url = self.driver.current_url
+            # Save AppState if not exists
+            if not os.path.exists(APPSTATE_FILE):
+                await context.storage_state(path=APPSTATE_FILE)
+                print("💾 AppState saved! You can now use hosting without credentials.")
+
+            while True:
+                try:
+                    # Find unread chats
+                    unread_chats = await page.query_selector_all("//li//div[contains(@class,'unread')]")
+                    if unread_chats:
+                        print(f"📩 Found {len(unread_chats)} unread chats")
+                        for chat in unread_chats:
+                            await chat.click()
+                            await page.wait_for_timeout(3000)
+
+                            current_url = page.url
                             if "t/" in current_url:
                                 user_id = current_url.split("t/")[-1].split("?")[0]
                             else:
@@ -123,46 +81,29 @@ class MessengerBot:
                                 print(f"⏩ Already replied to {user_id}")
                                 continue
 
-                            # Send messages from file
-                            msg_box = self.wait.until(
-                                EC.presence_of_element_located((By.XPATH, "//div[@role='textbox']"))
-                            )
+                            # Send messages
+                            msg_box = await page.wait_for_selector("div[role='textbox']")
                             for i, message in enumerate(messages, 1):
-                                msg_box.send_keys(message)
-                                time.sleep(0.5)
-                                msg_box.send_keys(Keys.ENTER)
+                                await msg_box.fill(message)
+                                await msg_box.press("Enter")
                                 print(f"✅ Sent message {i}/{len(messages)} to {user_id}")
                                 if i < len(messages):
-                                    time.sleep(self.delay_between_messages)
+                                    await page.wait_for_timeout(self.delay_between_messages * 1000)
 
                             self.mark_replied(user_id)
-                            time.sleep(2)
-                        except Exception as e:
-                            print(f"❌ Error replying: {e}")
-                else:
-                    print("⏳ No new messages")
-                time.sleep(10)
-            except Exception as e:
-                print(f"Loop error: {e}")
-                time.sleep(10)
+                            await page.wait_for_timeout(2000)
+                    else:
+                        print("⏳ No new messages")
+                    await page.wait_for_timeout(10000)
 
-    def close(self):
-        try:
-            self.driver.quit()
-            print("Browser closed.")
-        except:
-            pass
+                except Exception as e:
+                    print(f"❌ Error in loop: {e}")
+                    await page.wait_for_timeout(10000)
 
 
+# --------- Entry Point ----------
 if __name__ == "__main__":
-    print("⚠️ WARNING: Automating Facebook Messenger may violate Facebook’s Terms of Service.")
+    print("⚠️ WARNING: Automating Facebook Messenger may violate Terms of Service!")
 
-    bot = MessengerBot(headless=True, message_file="messages.txt", delay_between_messages=3)
-
-    if not bot.load_appstate():
-        print("⚠️ No AppState found. Login manually first.")
-        bot.driver.get("https://www.facebook.com")
-        input("Login manually, then press Enter to save AppState...")
-        bot.save_appstate()
-
-    bot.check_and_reply()
+    bot = MessengerBot(message_file=MESSAGE_FILE, delay_between_messages=3)
+    asyncio.run(bot.run())
