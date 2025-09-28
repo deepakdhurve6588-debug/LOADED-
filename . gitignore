@@ -1,0 +1,35 @@
+# Environment
+.env
+.env.local
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+
+# Data files
+data/appstate.json
+data/keys/
+data/secret_conversations/
+data/uids.txt
+
+# Logs
+logs/*.log
+*.log
+
+# Selenium
+webdriver/
+geckodriver.log
+chromedriver.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
